@@ -9,6 +9,8 @@ import torch.multiprocessing as mp
 import yaml
 from munch import munchify
 
+from icecream import ic
+
 import wandb
 from gaussian_splatting.scene.gaussian_model import GaussianModel
 from gaussian_splatting.utils.system_utils import mkdir_p
@@ -90,6 +92,9 @@ class SLAM:
         self.backend.backend_queue = backend_queue
         self.backend.live_mode = self.live_mode
 
+        # ici!
+        ic("96")
+
         self.backend.set_hyperparams()
 
         self.params_gui = gui_utils.ParamsGUI(
@@ -119,6 +124,8 @@ class SLAM:
         Log("Total FPS", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
 
         if self.eval_rendering:
+            # ici?
+            ic('eval rendering?')
             self.gaussians = self.frontend.gaussians
             kf_indices = self.frontend.kf_indices
             ATE = eval_ate(
@@ -151,11 +158,14 @@ class SLAM:
                 FPS,
             )
 
+            ic("160")
+
             # re-used the frontend queue to retrive the gaussians from the backend.
             while not frontend_queue.empty():
                 frontend_queue.get()
             backend_queue.put(["color_refinement"])
             while True:
+                print("hhhh. Line 161 slam.py")
                 if frontend_queue.empty():
                     time.sleep(0.01)
                     continue
@@ -195,6 +205,7 @@ class SLAM:
             Log("GUI Stopped and joined the main thread")
 
     def run(self):
+        # print(time.time()) 没有输出
         pass
 
 

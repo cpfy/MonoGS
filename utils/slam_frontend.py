@@ -14,6 +14,7 @@ from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_tracking, get_median_depth
 
+from icecream import ic
 
 class FrontEnd(mp.Process):
     def __init__(self, config):
@@ -160,24 +161,44 @@ class FrontEnd(mp.Process):
         )
 
         pose_optimizer = torch.optim.Adam(opt_params)
+
+
+        t0 = time.perf_counter()
+        ic.disable()
+
         for tracking_itr in range(self.tracking_itr_num):
+            t1 = time.perf_counter()
             render_pkg = render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
+            t2 = time.perf_counter()
+            ic(t2 - t1)
+
             image, depth, opacity = (
                 render_pkg["render"],
                 render_pkg["depth"],
                 render_pkg["opacity"],
             )
+            t3 = time.perf_counter()
+            ic(t3 - t2)
             pose_optimizer.zero_grad()
+            t4 = time.perf_counter()
+            ic(t4 - t3)
             loss_tracking = get_loss_tracking(
                 self.config, image, depth, opacity, viewpoint
             )
+            t5 = time.perf_counter()
+            ic(t5 - t4)
             loss_tracking.backward()
+            t6 = time.perf_counter()
+            ic(t6 - t5)
 
             with torch.no_grad():
                 pose_optimizer.step()
                 converged = update_pose(viewpoint)
+
+            t7 = time.perf_counter()
+            ic(t7 - t6)
 
             if tracking_itr % 10 == 0:
                 self.q_main2vis.put(
@@ -191,6 +212,14 @@ class FrontEnd(mp.Process):
                 )
             if converged:
                 break
+
+            t8 = time.perf_counter()
+            ic(t8 - t1)
+
+        tracking_iter_time = time.perf_counter() - t0
+        ic(self.tracking_itr_num, tracking_iter_time, tracking_iter_time / self.tracking_itr_num)
+        ic.enable()
+
 
         self.median_depth = get_median_depth(depth, opacity)
         return render_pkg
