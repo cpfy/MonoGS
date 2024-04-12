@@ -18,6 +18,9 @@ from plyfile import PlyData, PlyElement
 from simple_knn._C import distCUDA2
 from torch import nn
 
+import cv2
+from icecream import ic
+
 from gaussian_splatting.utils.general_utils import (
     build_rotation,
     build_scaling_rotation,
@@ -110,9 +113,12 @@ class GaussianModel:
         image_ab = torch.clamp(image_ab, 0.0, 1.0)
         rgb_raw = (image_ab * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy()
 
+        # ic("create pcd...")
+
         if depthmap is not None:
             rgb = o3d.geometry.Image(rgb_raw.astype(np.uint8))
             depth = o3d.geometry.Image(depthmap.astype(np.float32))
+            # ic("not none.")
         else:
             depth_raw = cam.depth
             if depth_raw is None:
@@ -124,9 +130,17 @@ class GaussianModel:
                     + (np.random.randn(depth_raw.shape[0], depth_raw.shape[1]) - 0.5)
                     * 0.05
                 ) * scale
+                print("raw")
 
             rgb = o3d.geometry.Image(rgb_raw.astype(np.uint8))
             depth = o3d.geometry.Image(depth_raw.astype(np.float32))
+
+            random_str = np.random.randint(100000)
+            rgb_path = f"/saveimg/rgb_{random_str}.png"
+            depth_path = f"/saveimg/dep_{random_str}.png"
+            cv2.imwrite(rgb_path, rgb)
+            cv2.imwrite(depth_path, depth)
+            print("Save rgb and depth to ", rgb_path, depth_path)
 
         return self.create_pcd_from_image_and_depth(cam, rgb, depth, init)
 
@@ -326,6 +340,10 @@ class GaussianModel:
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
 
+        if self._features_dc.shape == torch.Size([0]):
+            print("[Warning] Can not save an empty Gaussian. Returned")
+            return
+
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
         f_dc = (
@@ -358,6 +376,8 @@ class GaussianModel:
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, "vertex")
         PlyData([el]).write(path)
+
+        print("[Info] Save a gaussian ply.")
 
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity) * 0.01)

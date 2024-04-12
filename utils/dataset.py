@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import trimesh
 from PIL import Image
+from icecream import ic
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
@@ -430,14 +431,29 @@ class RealsenseDataset(BaseDataset):
         self.pipeline = rs.pipeline()
         self.h, self.w = 720, 1280
         self.config = rs.config()
+        
+        # ic(self.config)
+
         self.config.enable_stream(rs.stream.color, self.w, self.h, rs.format.bgr8, 30)
         self.profile = self.pipeline.start(self.config)
 
+
+
+        ic(self.profile.get_device().query_sensors())
+        self.dep_sensor = self.profile.get_device().query_sensors()[0]
+        ic(self.dep_sensor)
+
         self.rgb_sensor = self.profile.get_device().query_sensors()[1]
+
         self.rgb_sensor.set_option(rs.option.enable_auto_exposure, False)
         # rgb_sensor.set_option(rs.option.enable_auto_white_balance, True)
         self.rgb_sensor.set_option(rs.option.enable_auto_white_balance, False)
         self.rgb_sensor.set_option(rs.option.exposure, 200)
+
+        # self.rgb_sensor.set_option(rs.option.enable_auto_exposure, False)
+        # self.rgb_sensor.set_option(rs.option.enable_auto_white_balance, True)
+        # self.rgb_sensor.set_option(rs.option.exposure, )
+
         self.rgb_profile = rs.video_stream_profile(
             self.profile.get_stream(rs.stream.color)
         )
