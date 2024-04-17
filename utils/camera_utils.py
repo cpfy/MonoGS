@@ -152,3 +152,12 @@ class Camera(nn.Module):
 
         self.exposure_a = None
         self.exposure_b = None
+
+    def __repr__(self):
+        RT = torch.cat([self.R, self.T.unsqueeze(1)], dim=1)
+        return (
+            f"Camera(uid={self.uid}), R&T=\n"
+            f"{RT}\n"
+            f"R&T_gt=\n"
+            f"{torch.cat([self.R_gt, self.T_gt.unsqueeze(1)], dim=1)}"
+        )

@@ -21,6 +21,10 @@ from gaussian_splatting.utils.loss_utils import ssim
 from gaussian_splatting.utils.system_utils import mkdir_p
 from utils.logging_utils import Log
 
+from icecream import ic
+import sys
+import csv
+
 
 def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ## Plot
@@ -32,6 +36,7 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
 
     ## RMSE
     pose_relation = metrics.PoseRelation.translation_part
+    ic(pose_relation, type(pose_relation))
     data = (traj_ref, traj_est_aligned)
     ape_metric = metrics.APE(pose_relation)
     ape_metric.process_data(data)
@@ -190,3 +195,100 @@ def save_gaussians(gaussians, name, iteration, final=False):
             name, "point_cloud/iteration_{}".format(str(iteration))
         )
     gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+
+
+
+
+
+
+
+def save_eval_ape(poses_gt, poses_est, plot_dir, frame_num, iter, monocular=False):
+    ## Plot
+    traj_ref = PosePath3D(poses_se3=poses_gt)
+    traj_est = PosePath3D(poses_se3=poses_est)
+
+    traj_est_aligned = trajectory.align_trajectory(
+        traj_est, traj_ref, correct_scale=monocular
+    )
+
+    # 计算每两个对应pose之间的误差
+    pose_relation = metrics.PoseRelation.translation_part
+    data = (traj_ref, traj_est_aligned)
+    ape_metric = metrics.APE(pose_relation)
+    ape_metric.process_data(data)
+    ape_errors = ape_metric.error  # 这里存储了每两个对应pose之间的误差
+
+
+    return ape_errors[-1]
+
+    gt1 = poses_gt[0]
+    est1 = poses_est[0]
+    ape1 = np.linalg.norm(gt1 - est1)
+    ic.enable()
+    ic(ape1, ape_errors[0], ape_errors)
+    ic(poses_gt, poses_est)
+    assert(ape1 == ape_errors[0]), "The first APE is not equal to the first element in ape_errors."
+
+    ic(ape_errors, type(ape_errors), len(ape_errors))
+    ic(len(poses_gt))
+
+    # 保存统计数据和图像(可选)
+    # ape_stat = ape_metric.get_statistic(metrics.StatisticsType.rmse)
+    # Log("RMSE ATE [m]", ape_stat, tag="Eval")
+
+    csv_name = "stats_{}.csv".format(str(frame_num))
+    file_path = os.path.join("./apes", csv_name)
+    with open(file_path, 'a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([iter] + ape_errors)
+
+    ic(f"Save ape errors (iter={iter}) to: {csv_name}")
+
+    return ape_errors
+
+
+
+
+
+
+
+def get_eval_error(frames, save_dir, frame_num, iteration_num, final=False, monocular=False):
+    trj_est_np, trj_gt_np = [], []
+
+    def gen_pose_matrix(R, T):
+        pose = np.eye(4)
+        pose[0:3, 0:3] = R.cpu().numpy()
+        pose[0:3, 3] = T.cpu().numpy()
+        return pose
+
+    for f_id in range(len(frames)):
+        fr = frames[f_id]
+        pose_est = np.linalg.inv(gen_pose_matrix(fr.R, fr.T))
+        pose_gt = np.linalg.inv(gen_pose_matrix(fr.R_gt, fr.T_gt))
+
+        trj_est_np.append(pose_est)
+        trj_gt_np.append(pose_gt)
+
+    # ic.enable()
+    # ic(frames, type(frames), len(frames))
+    # ic(trj_gt, type(trj_gt), len(trj_gt))
+    # ic(trj_est, type(trj_est), len(trj_est))
+    # ic.disable()
+
+    plot_dir = os.path.join(save_dir, "plot")
+    mkdir_p(plot_dir)
+
+    frame = "final" if final else "{:04}".format(frame_num)
+
+    assert(iteration_num is not None), "iteration_num is None, please check it."
+
+    ate = save_eval_ape(
+        poses_gt=trj_gt_np,
+        poses_est=trj_est_np,
+        plot_dir=plot_dir,
+        frame_num=frame,
+        iter=iteration_num,
+        monocular=monocular,
+    )
+
+    return ate

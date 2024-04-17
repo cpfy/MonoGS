@@ -337,11 +337,11 @@ class GaussianModel:
             l.append("rot_{}".format(i))
         return l
 
-    def save_ply(self, path):
+    def save_ply(self, path, printlog = False):
         mkdir_p(os.path.dirname(path))
 
         if self._features_dc.shape == torch.Size([0]):
-            print("[Warning] Can not save an empty Gaussian. Returned")
+            if printlog: print("[Warning] Can not save an empty Gaussian. Returned")
             return
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -377,7 +377,8 @@ class GaussianModel:
         el = PlyElement.describe(elements, "vertex")
         PlyData([el]).write(path)
 
-        print("[Info] Save a gaussian ply.")
+        if printlog: 
+            print("[Info] Save a gaussian ply.")
 
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity) * 0.01)

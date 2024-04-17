@@ -93,7 +93,6 @@ class SLAM:
         self.backend.live_mode = self.live_mode
 
         # ici!
-        ic("96")
 
         self.backend.set_hyperparams()
 

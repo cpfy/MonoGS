@@ -14,7 +14,9 @@ from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_tracking, get_median_depth
 
+
 from icecream import ic
+from utils.eval_utils import get_eval_error
 
 class FrontEnd(mp.Process):
     def __init__(self, config):
@@ -43,6 +45,12 @@ class FrontEnd(mp.Process):
         self.cameras = dict()
         self.device = "cuda:0"
         self.pause = False
+
+        # 记录tracking每个iteration时的pose
+        self.updating_cameras = dict()
+
+        self.ape_recorder = [[] for _ in range(101)]
+
 
     def set_hyperparams(self):
         self.save_dir = self.config["Results"]["save_dir"]
@@ -166,6 +174,18 @@ class FrontEnd(mp.Process):
         t0 = time.perf_counter()
         ic.disable()
 
+        MIN_THRESHOLD = 2
+        if cur_frame_idx > MIN_THRESHOLD:
+            err = get_eval_error(
+                self.updating_cameras,
+                #不要只metric关键帧了 self.kf_indices,
+                self.save_dir,
+                frame_num = cur_frame_idx,
+                iteration_num = 0,
+                monocular = self.monocular,
+            )
+            self.ape_recorder[0].append(err)
+
         for tracking_itr in range(self.tracking_itr_num):
             t1 = time.perf_counter()
             render_pkg = render(
@@ -200,6 +220,45 @@ class FrontEnd(mp.Process):
             t7 = time.perf_counter()
             ic(t7 - t6)
 
+
+            ic.enable()
+            # print(viewpoint)
+            self.updating_cameras[cur_frame_idx] = viewpoint
+            # print(viewpoint)  确实在更新
+            # ic(len(self.updating_cameras), len(self.cameras))
+            # ic(self.updating_cameras.keys(),self.updating_cameras.values())
+
+
+            stop_frame = 20
+            if cur_frame_idx > MIN_THRESHOLD:
+                # Log(f"Itr={tracking_itr+1}, Getting evaluated pose ATE for statistics.")
+                err = get_eval_error(
+                    self.updating_cameras,
+                    #不要只metric关键帧了 self.kf_indices,
+                    self.save_dir,
+                    frame_num = cur_frame_idx,
+                    iteration_num = tracking_itr+1,
+                    monocular = self.monocular,
+                )
+                self.ape_recorder[tracking_itr + 1].append(err)
+
+            if cur_frame_idx == stop_frame:
+                import os
+                import csv
+                time_str = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+                csv_name = f"apes_iter{stop_frame}-{time_str}.csv"
+                file_path = os.path.join("./apes", csv_name)
+                with open(file_path, 'w', newline='') as file:
+                    writer = csv.writer(file)
+                    for iter in range(len(self.ape_recorder)):
+                        ape_errors = self.ape_recorder[iter]
+                        writer.writerow([iter] + ape_errors)
+
+                print(f"【Success!】Save ape errors (iter={iter}) to: {csv_name}")
+                exit(0)
+
+            ic.disable()
+
             if tracking_itr % 10 == 0:
                 self.q_main2vis.put(
                     gui_utils.GaussianPacket(
@@ -210,8 +269,8 @@ class FrontEnd(mp.Process):
                         else np.zeros((viewpoint.image_height, viewpoint.image_width)),
                     )
                 )
-            if converged:
-                break
+            # if converged:
+            #     break
 
             t8 = time.perf_counter()
             ic(t8 - t1)
@@ -336,9 +395,11 @@ class FrontEnd(mp.Process):
 
         for kf_id, kf_R, kf_T in keyframes:
             self.cameras[kf_id].update_RT(kf_R.clone(), kf_T.clone())
+            # self.updating_cameras[kf_id].update_RT(kf_R.clone(), kf_T.clone())
 
     def cleanup(self, cur_frame_idx):
         self.cameras[cur_frame_idx].clean()
+        self.updating_cameras[cur_frame_idx].clean()
         if cur_frame_idx % 10 == 0:
             torch.cuda.empty_cache()
 
@@ -406,6 +467,7 @@ class FrontEnd(mp.Process):
                 viewpoint.compute_grad_mask(self.config)
 
                 self.cameras[cur_frame_idx] = viewpoint
+                self.updating_cameras[cur_frame_idx] = viewpoint
 
                 if self.reset:
                     self.initialize(cur_frame_idx, viewpoint)
@@ -501,6 +563,18 @@ class FrontEnd(mp.Process):
                         cur_frame_idx,
                         monocular=self.monocular,
                     )
+
+                    # Log("Saving evaluated pose ATE for statistics.")
+                    # save_eval_error(
+                    #     self.cameras,
+                    #     #不要只metric关键帧了 self.kf_indices,
+                    #     self.save_dir,
+                    #     cur_frame_idx,
+                    #     monocular=self.monocular,
+                    # )
+
+
+
                 toc.record()
                 torch.cuda.synchronize()
                 if create_kf:
@@ -523,3 +597,8 @@ class FrontEnd(mp.Process):
                 elif data[0] == "stop":
                     Log("Frontend Stopped.")
                     break
+
+
+    def get_ape(self):
+        pass
+

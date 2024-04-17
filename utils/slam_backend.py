@@ -1,5 +1,6 @@
 import random
 import time
+import os
 
 import torch
 import torch.multiprocessing as mp
@@ -12,6 +13,12 @@ from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_mapping
 
+from PIL import Image
+from icecream import ic
+import numpy as np
+import Imath
+import cv2
+import OpenEXR
 
 class BackEnd(mp.Process):
     def __init__(self, config):
@@ -68,6 +75,9 @@ class BackEnd(mp.Process):
         self.gaussians.extend_from_pcd_seq(
             viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map
         )
+
+        # ic(depth_map.shape, depth_map[0])
+        # self.save_depth(depth_map)
 
     def reset(self):
         self.iteration_count = 0
@@ -366,6 +376,12 @@ class BackEnd(mp.Process):
 
     def run(self):
         while True:
+
+            # printIt = False
+            # t0 = time.perf_counter()
+            # self.save_gaussians(printlog = printIt)
+            # if printIt: print(f"save_gaussians time: {time.perf_counter() - t0}")
+
             if self.backend_queue.empty():
                 if self.pause:
                     time.sleep(0.01)
@@ -383,8 +399,11 @@ class BackEnd(mp.Process):
                     self.push_to_frontend()
             else:
                 data = self.backend_queue.get()
+                
                 if data[0] == "stop":
                     break
+                elif data[0] == "save":
+                    self.save_gaussians()
                 elif data[0] == "pause":
                     self.pause = True
                 elif data[0] == "unpause":
@@ -396,6 +415,7 @@ class BackEnd(mp.Process):
                     cur_frame_idx = data[1]
                     viewpoint = data[2]
                     depth_map = data[3]
+
                     Log("Resetting the system")
                     self.reset()
 
@@ -480,3 +500,23 @@ class BackEnd(mp.Process):
         while not self.frontend_queue.empty():
             self.frontend_queue.get()
         return
+
+
+    def save_depth(self, depth_map):
+
+        # 假设depth_map是你的深度图数据
+        depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+        timestamp = time.time()
+        depth_map_file = f"/home/uu/t4/pr/MonoGS/saveimg/depth_{timestamp}.png"
+
+        # 保存深度图为PNG格式的图像文件
+        cv2.imwrite(depth_map_file, depth_map_normalized)
+        print(f"Depth map saved to: {depth_map_file}")
+
+
+
+    def save_gaussians(self, printlog):
+        point_cloud_path = "savegaus"
+        ts = time.time()
+        self.gaussians.save_ply(os.path.join(point_cloud_path, f"{ts}.ply"))
