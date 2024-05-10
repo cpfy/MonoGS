@@ -176,14 +176,15 @@ class FrontEnd(mp.Process):
 
         MIN_THRESHOLD = 2
         if cur_frame_idx > MIN_THRESHOLD:
-            err = get_eval_error(
-                self.updating_cameras,
-                #不要只metric关键帧了 self.kf_indices,
-                self.save_dir,
-                frame_num = cur_frame_idx,
-                iteration_num = 0,
-                monocular = self.monocular,
-            )
+
+            # err = get_eval_error(
+            #     self.updating_cameras,
+            #     #不要只metric关键帧了 self.kf_indices,
+            #     self.save_dir,
+            #     frame_num = cur_frame_idx,
+            #     iteration_num = 0,
+            #     monocular = self.monocular,
+            # )
             self.ape_recorder[0].append(err)
 
         for tracking_itr in range(self.tracking_itr_num):

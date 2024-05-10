@@ -219,15 +219,30 @@ def save_eval_ape(poses_gt, poses_est, plot_dir, frame_num, iter, monocular=Fals
     ape_errors = ape_metric.error  # 这里存储了每两个对应pose之间的误差
 
 
-    return ape_errors[-1]
+    # return ape_errors[-1]
 
-    gt1 = poses_gt[0]
-    est1 = poses_est[0]
-    ape1 = np.linalg.norm(gt1 - est1)
+    apelist = []
+    for i in range(len(ape_errors)):
+
+        gt1 = poses_gt[i]
+        est1 = poses_est[i]
+        gt_trans = gt1[0:3, 3]
+        est_trans = est1[0:3, 3]
+        ape1 = np.linalg.norm(gt_trans - est_trans)
+
+        apelist.append(ape1)
+
     ic.enable()
-    ic(ape1, ape_errors[0], ape_errors)
-    ic(poses_gt, poses_est)
-    assert(ape1 == ape_errors[0]), "The first APE is not equal to the first element in ape_errors."
+    ic(i, len(ape_errors), ape1, ape_errors[i], ape_errors)
+    ic(poses_gt, poses_est, gt_trans, est_trans)
+
+    ic(apelist)
+
+    if(ape1 == ape_errors[i]):
+        ic("pass.")
+        ic(ape_errors)
+
+    assert(ape1 == ape_errors[i]), "The first APE is not equal to the first element in ape_errors."
 
     ic(ape_errors, type(ape_errors), len(ape_errors))
     ic(len(poses_gt))
