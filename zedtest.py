@@ -56,9 +56,16 @@ def main():
 
     init = sl.InitParameters()
     init.camera_resolution = sl.RESOLUTION.AUTO
+
+
+
     init.depth_mode = sl.DEPTH_MODE.NONE
     init.sdk_verbose = 1
-    parse_args(init)
+
+    # parse_args(init)
+    init.camera_resolution = sl.RESOLUTION.VGA
+
+
     cam = sl.Camera()
     status = cam.open(init)
     if status != sl.ERROR_CODE.SUCCESS: #Ensure the camera has opened succesfully

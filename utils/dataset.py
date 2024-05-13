@@ -17,6 +17,10 @@ except Exception:
     pass
 
 
+import pyzed.sl as sl
+import inspect
+
+
 class ReplicaParser:
     def __init__(self, input_folder):
         self.input_folder = input_folder
@@ -519,6 +523,140 @@ class RealsenseDataset(BaseDataset):
         return image, depth, pose
 
 
+
+
+class ZedDataset(BaseDataset):
+    def __init__(self, args, path, config):
+
+
+        # super().__init__(args, path, config)
+        # init = sl.InitParameters()
+        # init.camera_resolution = sl.RESOLUTION.AUTO
+        # init.depth_mode = sl.DEPTH_MODE.NONE
+        # init.sdk_verbose = 1
+        # init.camera_resolution = sl.RESOLUTION.VGA
+        # cam = sl.Camera()
+        # status = cam.open(init)
+        # if status != sl.ERROR_CODE.SUCCESS: #Ensure the camera has opened succesfully
+        #     print("Camera Open : "+repr(status)+". Exit program.")
+        #     exit()
+        # runtime = sl.RuntimeParameters()
+        # stream_params = sl.StreamingParameters()
+        # print("Streaming on port ",stream_params.port) #Get the port used to stream
+        # stream_params.codec = sl.STREAMING_CODEC.H264
+        # stream_params.bitrate = 4000
+        # status_streaming = cam.enable_streaming(stream_params) #Enable streaming
+        # if status_streaming != sl.ERROR_CODE.SUCCESS:
+        #     print("Streaming initialization error: ", status_streaming)
+        #     cam.close()
+        #     exit()
+
+
+        super().__init__(args, path, config)
+        self.cam = sl.Camera()
+        # self.h, self.w = 720, 1280
+        self.h, self.w = 376, 672
+        self.runtime = sl.RuntimeParameters()
+        self.stream_params = sl.StreamingParameters()
+
+        init = sl.InitParameters()
+        init.camera_resolution = sl.RESOLUTION.VGA
+        init.depth_mode = sl.DEPTH_MODE.PERFORMANCE
+        init.sdk_verbose = 1
+
+        status = self.cam.open(init)
+        if status != sl.ERROR_CODE.SUCCESS:
+            print("Camera Open : " + repr(status) + ". Exit program.")
+            exit()
+
+        self.stream_params.codec = sl.STREAMING_CODEC.H264
+        self.stream_params.bitrate = 4000
+        status_streaming = self.cam.enable_streaming(self.stream_params)
+        if status_streaming != sl.ERROR_CODE.SUCCESS:
+            print("Streaming initialization error: ", status_streaming)
+            self.cam.close()
+            exit()
+
+        # self.ci = self.cam.get_camera_information()
+        # ic(self.ci, type(self.ci))
+
+        self.rgb_intrinsics = self.cam.get_camera_information().camera_configuration.calibration_parameters.left_cam
+
+        self.fx = self.rgb_intrinsics.fx
+        self.fy = self.rgb_intrinsics.fy
+        self.cx = self.rgb_intrinsics.cx
+        self.cy = self.rgb_intrinsics.cy
+
+        # members = inspect.getmembers(self.rgb_intrinsics.image_size)
+        # for name, value in members:
+        #     print(f"{name}: {value}")
+        # exit(0)
+
+        self.width = self.rgb_intrinsics.image_size.width
+        self.height = self.rgb_intrinsics.image_size.height
+        self.fovx = focal2fov(self.fx, self.width)
+        self.fovy = focal2fov(self.fy, self.height)
+        self.K = np.array(
+            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
+        )
+
+        self.disorted = True
+        self.dist_coeffs = np.asarray(self.rgb_intrinsics.disto)
+        self.map1x, self.map1y = cv2.initUndistortRectifyMap(
+            self.K, self.dist_coeffs, np.eye(3), self.K, (self.w, self.h), cv2.CV_32FC1
+        )
+
+        # depth parameters
+        self.has_depth = True
+        #TODO 不确定有没有用
+        # self.sc = self.rgb_intrinsics.scale
+        # members = inspect.getmembers(self.sc)
+        # for name, value in members:
+        #     print(f"{name}: {value}")
+        # exit(0)
+        # self.depth_scale = self.cam.get_camera_information().depth_unit
+        self.depth_scale = 5000
+
+
+    def __getitem__(self, idx):
+        # Prepare single image containers
+        left_image = sl.Mat()
+        right_image = sl.Mat()
+        depth_image = sl.Mat()
+
+        pose = torch.eye(4, device=self.device, dtype=self.dtype)
+
+        err = self.cam.grab(self.runtime)
+        if err == sl.ERROR_CODE.SUCCESS:
+            self.cam.retrieve_image(left_image, sl.VIEW.LEFT)
+            self.cam.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
+
+            # type(left_image): <class 'pyzed.sl.Mat'>; type(image): <class 'numpy.ndarray'>
+            image = left_image.get_data()
+            depth = depth_image.get_data()
+            # ic(type(image), type(depth), type(left_image), type(depth_image))
+
+            image = np.asanyarray(image.data)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            if self.disorted:
+                image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+
+            image = (
+                torch.from_numpy(image / 255.0)
+                .clamp(0.0, 1.0)
+                .permute(2, 0, 1)
+                .to(device=self.device, dtype=self.dtype)
+            )
+
+            depth = np.asanyarray(depth.data) / self.depth_scale
+            ic(depth)
+
+            return image, depth, pose
+        else:
+            raise RuntimeError("Failed to retrieve frames from ZED camera")
+
+
+
 def load_dataset(args, path, config):
     if config["Dataset"]["type"] == "tum":
         return TUMDataset(args, path, config)
@@ -528,5 +666,7 @@ def load_dataset(args, path, config):
         return EurocDataset(args, path, config)
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
+    elif config["Dataset"]["type"] == "zed":
+        return ZedDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
