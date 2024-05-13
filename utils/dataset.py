@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import trimesh
 from PIL import Image
+from icecream import ic
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
@@ -431,6 +432,7 @@ class RealsenseDataset(BaseDataset):
         self.h, self.w = 720, 1280
         self.config = rs.config()
         self.config.enable_stream(rs.stream.color, self.w, self.h, rs.format.bgr8, 30)
+        self.config.enable_stream(rs.stream.depth, self.w, self.h, rs.format.z16, 30)
         self.profile = self.pipeline.start(self.config)
 
         self.rgb_sensor = self.profile.get_device().query_sensors()[1]
@@ -463,14 +465,46 @@ class RealsenseDataset(BaseDataset):
         )
 
         # depth parameters
-        self.has_depth = False
-        self.depth_scale = None
+        # self.has_depth = False
+        # self.depth_scale = None
+
+        # add depth
+        self.has_depth = True
+        self.depth_sensor = self.profile.get_device().query_sensors()[0]
+
+        # Create an align object
+        # rs.align allows us to perform alignment of depth frames to others frames
+        # The "align_to" is the stream type to which we plan to align depth frames.
+        self.align_to = rs.stream.color
+        self.align = rs.align(self.align_to)
 
     def __getitem__(self, idx):
         pose = torch.eye(4, device=self.device, dtype=self.dtype)
 
         frameset = self.pipeline.wait_for_frames()
-        rgb_frame = frameset.get_color_frame()
+        # rgb_frame = frameset.get_color_frame()
+
+        # Align the depth frame to color frame
+        aligned_frames = self.align.process(frameset)
+
+        rgb_frame = aligned_frames.get_color_frame()
+        aligned_depth_frame = aligned_frames.get_depth_frame()
+
+
+        ic("RGB frame: ", rgb_frame)
+        ic("Depth frame: ", aligned_depth_frame)
+
+        image = np.asanyarray(rgb_frame.get_data())
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        depth = np.asanyarray(aligned_depth_frame.get_data())
+        depth = depth.astype(np.int32)
+
+        depth = depth / 5000.0
+        ic(depth, type(depth))
+
+
+
+
         image = np.asanyarray(rgb_frame.get_data())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         if self.disorted:
@@ -482,7 +516,7 @@ class RealsenseDataset(BaseDataset):
             .permute(2, 0, 1)
             .to(device=self.device, dtype=self.dtype)
         )
-        return image, None, pose
+        return image, depth, pose
 
 
 def load_dataset(args, path, config):
