@@ -25,28 +25,30 @@ import sys
 import pyzed.sl as sl
 import cv2
 import argparse
-import socket 
+import socket
+import numpy as np
+from icecream import ic
 
 camera_settings = sl.VIDEO_SETTINGS.BRIGHTNESS
 str_camera_settings = "BRIGHTNESS"
 step_camera_settings = 1
-led_on = True 
+led_on = True
 selection_rect = sl.Rect()
 select_in_progress = False
 origin_rect = (-1,-1 )
 
-     
+
 def on_mouse(event,x,y,flags,param):
     global select_in_progress,selection_rect,origin_rect
     if event == cv2.EVENT_LBUTTONDOWN:
         origin_rect = (x, y)
         select_in_progress = True
     elif event == cv2.EVENT_LBUTTONUP:
-        select_in_progress = False 
+        select_in_progress = False
     elif event == cv2.EVENT_RBUTTONDOWN:
-        select_in_progress = False 
+        select_in_progress = False
         selection_rect = sl.Rect(0,0,0,0)
-    
+
     if select_in_progress:
         selection_rect.x = min(x,origin_rect[0])
         selection_rect.y = min(y,origin_rect[1])
@@ -55,7 +57,7 @@ def on_mouse(event,x,y,flags,param):
 
 def main():
     init_parameters = sl.InitParameters()
-    init_parameters.depth_mode = sl.DEPTH_MODE.NONE
+    init_parameters.depth_mode = sl.DEPTH_MODE.ULTRA
     init_parameters.sdk_verbose = 1
     init_parameters.set_from_stream(opt.ip_address.split(':')[0],int(opt.ip_address.split(':')[1]))
     cam = sl.Camera()
@@ -71,16 +73,23 @@ def main():
     print_camera_information(cam)
     print_help()
     switch_camera_settings()
-    
+
     key = ''
     while key != 113:  # for 'q' key
         err = cam.grab(runtime) #Check that a new image is successfully acquired
         if err == sl.ERROR_CODE.SUCCESS:
-            cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
+            # cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
+            cam.retrieve_measure(mat, sl.MEASURE.DEPTH)
             cvImage = mat.get_data()
-            if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
-                cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
-            cv2.imshow(win_name, cvImage)
+            # ic(type(cvImage), type(mat), cvImage.shape, mat.get_width(), mat.get_height())
+            cvImage = np.asanyarray(cvImage.data) / 5000
+            # print(cvImage.shape)
+            # if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
+                # cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
+            if cvImage.size != 0:
+                cv2.imshow(win_name, cvImage)
+            else:
+                pass
         else:
             print("Error during capture : ", err)
             break
@@ -144,11 +153,11 @@ def update_camera_settings(key, cam, runtime, mat):
         # Turn on or off camera LED.
         led_on = not led_on
         cam.set_camera_settings(sl.VIDEO_SETTINGS.LED_STATUS, led_on)
-    elif key == 97 : # for 'a' key 
+    elif key == 97 : # for 'a' key
         # Set exposure region of interest (ROI) on a target area.
         print("[Sample] set AEC_AGC_ROI on target [",selection_rect.x,",",selection_rect.y,",",selection_rect.width,",",selection_rect.height,"]")
         cam.set_camera_settings_roi(sl.VIDEO_SETTINGS.AEC_AGC_ROI,selection_rect,sl.SIDE.BOTH)
-    elif key == 102: #for 'f' key 
+    elif key == 102: #for 'f' key
         # Reset exposure ROI to full resolution.
         print("[Sample] reset AEC_AGC_ROI to full res")
         cam.set_camera_settings_roi(sl.VIDEO_SETTINGS.AEC_AGC_ROI,selection_rect,sl.SIDE.BOTH,True)
@@ -199,7 +208,7 @@ def valid_ip_or_hostname(ip_or_hostname):
     except (socket.error, ValueError):
         raise argparse.ArgumentTypeError("Invalid IP address or hostname format. Use format a.b.c.d:p or hostname:p")
 
-  
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--ip_address', type=valid_ip_or_hostname, help='IP address or hostname of the sender. Should be in format a.b.c.d:p or hostname:p', required=True)

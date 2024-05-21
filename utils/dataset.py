@@ -649,7 +649,7 @@ class ZedDataset(BaseDataset):
             )
 
             depth = np.asanyarray(depth.data) / self.depth_scale
-            ic(depth)
+            # ic(depth)
 
             return image, depth, pose
         else:
