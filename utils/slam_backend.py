@@ -12,6 +12,8 @@ from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_mapping
 
+from icecream import ic
+import os
 
 class BackEnd(mp.Process):
     def __init__(self, config):
@@ -389,6 +391,8 @@ class BackEnd(mp.Process):
                     self.pause = True
                 elif data[0] == "unpause":
                     self.pause = False
+                elif data[0] == "save":
+                    self.gaussians.save_ply("./point_cloud.ply")
                 elif data[0] == "color_refinement":
                     self.color_refinement()
                     self.push_to_frontend()

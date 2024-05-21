@@ -290,6 +290,9 @@ class FrontEnd(mp.Process):
         self.backend_queue.put(msg)
         self.requested_keyframe += 1
 
+        # TODO: Temporary "save" after keyframe
+        self.backend_queue.put(["save"])
+
     def reqeust_mapping(self, cur_frame_idx, viewpoint):
         msg = ["map", cur_frame_idx, viewpoint]
         self.backend_queue.put(msg)
